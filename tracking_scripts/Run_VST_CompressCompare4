@@ -1,0 +1,78 @@
+#!/bin/bash
+
+echo "Run_VST_CompressCompare with parameters $0 $1 $2 $3"
+
+# Set Parameters to be used for tracking and autofind
+export r=12
+export precision=0.02
+export sample_spacing=0.5
+export border_zone=3
+export tracker_zone=5
+
+# Autofind for brightfield beads
+export maintain=0
+export threshold=0
+export window=10
+export lost_sens=0
+
+# Autofind for fluorescent beads
+export blur_lost_and_found=2
+export center_surround=2
+export maintain_fluorescent=25
+export fluorescent_spot_threshold=0.52
+export fluorescent_max_regions=400
+export intens_lost_sens=0.5
+
+# Set return value to 254(-2 in C code)
+export RET=254
+
+# We want to read from the .vrpn output file as our input, which was
+# passed as the output (third) command-line argument, but without the .vrpn
+# extension.
+export infile="$2"
+
+# We want to write the output to a file with the same name as the original
+# output file, but with "_COMPRESSFAILED" added.
+export outfile="$3"_COMPRESSFAILED
+
+echo "Finding beads in first video ($infile)..."
+while [ $RET -eq 254 ]
+do
+  /afs/cs.unc.edu/home/cshao/compression_project/video2/video_build/video_spot_tracker_nogui  -nogui -radius $r -precision $precision -sample_spacing $sample_spacing -dead_zone_around_border $border_zone -dead_zone_around_trackers $tracker_zone -maintain_this_many_beads $maintain -candidate_spot_threshold $threshold -sliding_window_radius $window -maintain_fluorescent_beads $maintain_fluorescent -fluorescent_spot_threshold $fluorescent_spot_threshold -fluorescent_max_regions $fluorescent_max_regions -blur_lost_and_found $blur_lost_and_found -center_surround $center_surround -lost_behavior 1 -intensity_lost_sensitivity $intens_lost_sens -lost_tracking_sensitivity $lost_sens -tracker 0 0 $r -outfile "$3"lottanerve_tmp "$1"
+  let "RET=$?"
+done
+
+echo "Tracking resulting beads in second video ($2)..."
+export r=12
+export precision=0.02
+export sample_spacing=0.5
+export border_zone=3
+export tracker_zone=5
+#export threshold=0.8 
+export window=10
+export intens_lost_sens=0.5
+# Brightfield lost tracking sensitivity
+export lost_sens=0
+
+/afs/cs.unc.edu/home/cshao/compression_project/video2/video_build/video_spot_tracker_nogui  -nogui -lost_behavior 1 -precision $precision -sample_spacing $sample_spacing -dead_zone_around_border $border_zone -dead_zone_around_trackers $tracker_zone -blur_lost_and_found $blur_lost_and_found -center_surround $center_surround -lost_tracking_sensitivity $lost_sens -tracker 0 0 $r -continue_from "$3"lottanerve_tmp.csv -outfile "$outfile" "$infile"
+
+# Delete temporary files 
+rm -f "$3"lottanerve_tmp.csv
+rm -f "$3"lottanerve_tmp.vrpn
+
+# Delete the output .vrpn file, we only need the CSV file.
+rm -f "$outfile".vrpn
+
+# Compare the original CSV file to the just-tracked new one.
+# If they are the same, delete the new one (test succeeded).
+# If not, leave the file there so we know there was a problem
+# with the compression.
+diff -q "$3".csv "$outfile".csv
+rc=$?
+if [[ $rc == 0 ]] ; then
+echo "no difference"
+	rm -f "$outfile".csv
+fi
+
+echo "Done testing compressed tracking!"
+
